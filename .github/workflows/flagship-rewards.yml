@@ -1,11 +1,9 @@
 name: Flagship SSR Rewards
 
 on:
-  workflow_dispatch:
-    inputs:
-      tag_name:
-        description: "Release tag (e.g. rewards/2026-03-03_to_2026-03-10)"
-        required: true
+  push:
+    tags:
+      - "rewards/*"
 
 jobs:
   compute-rewards:
@@ -37,9 +35,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ inputs.tag_name }}" \
+          gh release create "${{ github.ref_name }}" \
             --repo "${{ github.repository }}" \
-            --title "Flagship SSR Rewards — ${{ inputs.tag_name }}" \
+            --title "Flagship SSR Rewards — ${{ github.ref_name }}" \
             --notes "$(cat <<'EOF'
           Automated SSR reward computation for the USDS Flagship Vault.
 
