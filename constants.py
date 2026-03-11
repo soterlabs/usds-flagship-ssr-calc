@@ -1,0 +1,37 @@
+# Vault
+VAULT = "0xE15fcC81118895b67b6647BBd393182dF44E11E0"
+
+# ERC20 Transfer event topic
+TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+
+# Period start: 2026-03-03 16:00:59 UTC
+FROM_BLOCK = 24577985
+FROM_BLOCK_TS = 1772553659
+
+# Period end: 2026-03-10 15:59:59 UTC (~1 week)
+TO_BLOCK = 24628118
+TO_BLOCK_TS = 1773158399
+
+# Token config
+USDS_DECIMALS = 18
+DEAD_ADDRESS = "0x000000000000000000000000000000000000dead"
+ZERO_ADDR_PADDED = "0x" + "0" * 64
+
+# Reward parameters
+IDLE_FACTOR = 0.80
+SECONDS_PER_YEAR = 365.25 * 24 * 3600
+
+# APR schedule: rate changes at block 24621023 (2026-03-09 16:10:35 UTC)
+# Ref: https://etherscan.io/tx/0x9c48c281c9db98936e3d4d70b4a5ae43247434dbd1ddbf11091a912267865037
+RATE_CHANGE_TS = 1773072635
+APR_SCHEDULE = [
+    (FROM_BLOCK_TS, 0.04),     # 4.00% from start
+    (RATE_CHANGE_TS, 0.0375),  # 3.75% from block 24621023
+]
+
+# Output format
+REWARD_TOKEN = "0xdC035D45d973E3EC169d2276DDab16f1e407384F"  # USDS
+REWARD_REASON = "usds-flagship-ssr"
+
+# APIs
+ETHERSCAN_API = "https://api.etherscan.io/v2/api"

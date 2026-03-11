@@ -1,0 +1,54 @@
+name: Flagship SSR Rewards
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag (e.g. rewards/2026-03-03_to_2026-03-10)"
+        required: true
+
+jobs:
+  compute-rewards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Extract events
+        env:
+          RPC_URL: ${{ secrets.RPC_URL }}
+          ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
+        run: python3 extract_events.py
+
+      - name: Calculate rewards
+        run: python3 calculate_rewards.py
+
+      - name: Identify output files
+        id: files
+        run: |
+          REWARDS_FILE=$(ls rewards_*.json)
+          echo "rewards_file=$REWARDS_FILE" >> "$GITHUB_OUTPUT"
+          echo "Found: $REWARDS_FILE"
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ inputs.tag_name }}" \
+            --repo "${{ github.repository }}" \
+            --title "Flagship SSR Rewards — ${{ inputs.tag_name }}" \
+            --notes "$(cat <<'EOF'
+          Automated SSR reward computation for the USDS Flagship Vault.
+
+          **Vault:** `0xE15fcC81118895b67b6647BBd393182dF44E11E0`
+          **Reward token:** USDS (`0xdC035D45d973E3EC169d2276DDab16f1e407384F`)
+
+          See `README.md` for methodology.
+          EOF
+          )" \
+            "${{ steps.files.outputs.rewards_file }}" \
+            depositors_summary.csv \
+            events.csv

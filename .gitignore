@@ -1,0 +1,5 @@
+# Generated output files (re-run extract_events.py + calculate_rewards.py to regenerate)
+events.csv
+extraction_data.json
+depositors_summary.csv
+rewards*.json
