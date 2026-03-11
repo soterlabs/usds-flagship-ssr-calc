@@ -5,6 +5,9 @@ on:
     tags:
       - "rewards/*"
 
+permissions:
+  contents: write
+
 jobs:
   compute-rewards:
     runs-on: ubuntu-latest
