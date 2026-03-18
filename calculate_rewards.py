@@ -19,7 +19,7 @@ from decimal import Decimal
 
 from constants import (
     VAULT, FROM_BLOCK_TS, IDLE_FACTOR, SECONDS_PER_YEAR,
-    APR_SCHEDULE, RATE_CHANGE_TS, REWARD_TOKEN, REWARD_REASON,
+    APR_SCHEDULE, REWARD_TOKEN, REWARD_REASON,
     DEAD_ADDRESS,
 )
 
@@ -168,8 +168,7 @@ def main():
     print(f"Loaded {len(events)} events, {len(pre_balances)} pre-period balances")
     print(f"Share price: {avg_price:.10f} USDS/share")
     print(f"Idle factor: {IDLE_FACTOR}")
-    print(f"APR: 4.00% before block 24621023, 3.75% after")
-    print(f"Rate change at: {datetime.fromtimestamp(RATE_CHANGE_TS, tz=timezone.utc)}")
+    print(f"APR schedule: {[(f'{rate*100:.2f}%') for _, rate in APR_SCHEDULE]}")
     print()
 
     start_ts = data["from_block_ts"]
@@ -178,10 +177,6 @@ def main():
     total_days = total_seconds / 86400
     print(f"Period: {datetime.fromtimestamp(start_ts, tz=timezone.utc)} to {datetime.fromtimestamp(end_ts, tz=timezone.utc)}")
     print(f"Duration: {total_days:.2f} days ({total_seconds:,} seconds)")
-    period1_days = (RATE_CHANGE_TS - start_ts) / 86400
-    period2_days = (end_ts - RATE_CHANGE_TS) / 86400
-    print(f"  Period 1 (4.00%): {period1_days:.2f} days")
-    print(f"  Period 2 (3.75%): {period2_days:.2f} days")
     print()
 
     results = compute_rewards(events, pre_balances, start_ts, end_ts, avg_price)
