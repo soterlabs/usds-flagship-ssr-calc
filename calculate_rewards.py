@@ -10,6 +10,7 @@ Usage:
     python3 calculate_rewards.py
 """
 
+import hashlib
 import json
 import os
 import csv
@@ -22,6 +23,16 @@ from constants import (
     APR_SCHEDULE, REWARD_TOKEN, REWARD_REASON,
     DEAD_ADDRESS,
 )
+
+def to_checksum_address(addr: str) -> str:
+    """EIP-55 checksum encoding."""
+    addr = addr.lower().removeprefix("0x")
+    addr_hash = hashlib.sha3_256(addr.encode()).hexdigest()
+    return "0x" + "".join(
+        c.upper() if int(addr_hash[i], 16) >= 8 else c
+        for i, c in enumerate(addr)
+    )
+
 
 # Convert float constants to Decimal for precise arithmetic
 D_IDLE_FACTOR = Decimal(str(IDLE_FACTOR))
@@ -221,7 +232,7 @@ def main():
     }
     for addr, v in sorted_results:
         if v["reward_wei"] > 0:
-            rewards_json["rewards"][addr] = {
+            rewards_json["rewards"][to_checksum_address(addr)] = {
                 REWARD_REASON: str(v["reward_wei"])
             }
 
