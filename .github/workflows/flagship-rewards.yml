@@ -18,6 +18,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install dependencies
+        run: pip install pycryptodome
+
       - name: Extract events
         env:
           RPC_URL: ${{ secrets.RPC_URL }}

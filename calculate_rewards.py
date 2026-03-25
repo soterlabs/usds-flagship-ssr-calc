@@ -13,7 +13,6 @@ Usage:
     python3 calculate_rewards.py
 """
 
-import hashlib
 import json
 import os
 import csv
@@ -21,20 +20,24 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from decimal import Decimal
 
+from Crypto.Hash import keccak
+
+
+def to_checksum_address(address):
+    """EIP-55 mixed-case checksum encoding."""
+    addr = address.lower().replace("0x", "")
+    k = keccak.new(digest_bits=256, data=addr.encode("ascii"))
+    hash_hex = k.hexdigest()
+    return "0x" + "".join(
+        c.upper() if int(hash_hex[i], 16) >= 8 else c
+        for i, c in enumerate(addr)
+    )
+
 from constants import (
     VAULT, USDS_TOKEN, SECONDS_PER_YEAR,
     APR_SCHEDULE, REWARD_REASON,
     DEAD_ADDRESS,
 )
-
-def to_checksum_address(addr: str) -> str:
-    """EIP-55 checksum encoding."""
-    addr = addr.lower().removeprefix("0x")
-    addr_hash = hashlib.sha3_256(addr.encode()).hexdigest()
-    return "0x" + "".join(
-        c.upper() if int(addr_hash[i], 16) >= 8 else c
-        for i, c in enumerate(addr)
-    )
 
 
 D_SECONDS_PER_YEAR = Decimal(str(SECONDS_PER_YEAR))
