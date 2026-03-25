@@ -5,14 +5,15 @@ Compute SSR (Sky Savings Rate) rewards for depositors of the [USDS Flagship Vaul
 ## How it works
 
 1. Fetches all `Transfer` events (mints, burns, share transfers) on the vault from the Etherscan logs API
-2. Reconstructs each depositor's share balance over time, including pre-period balances
-3. Computes rewards using time-weighted share balances, converted to USDS via the vault's share price:
+2. Fetches USDS token `Transfer` events to/from the vault to track the actual USDS balance sitting in the vault over time
+3. Reconstructs each depositor's share balance over time, including pre-period balances
+4. Computes rewards using each depositor's pro-rata share of the vault's USDS balance:
 
 ```
-reward = balance_shares × share_price × idle_factor × APR × duration / seconds_per_year
+reward = (depositor_shares / total_supply) × vault_usds_balance × APR × duration / seconds_per_year
 ```
 
-Segments are split at every balance change and at the APR change boundary.
+All events (share balance changes, vault USDS balance changes, APR boundaries) are merged into a unified timeline. Rewards are accrued for each segment between consecutive events.
 
 ## Parameters
 
@@ -20,12 +21,9 @@ Segments are split at every balance change and at the APR change boundary.
 |-----------|-------|
 | Vault | `0xE15fcC81118895b67b6647BBd393182dF44E11E0` |
 | Reward token | USDS (`0xdC035D45d973E3EC169d2276DDab16f1e407384F`) |
-| Period start | Block 24577985 (2026-03-03 16:00:59 UTC) |
-| Period end | Block 24628118 (2026-03-10 16:00:00 UTC) |
-| APR (before block 24621023) | 4.00% |
-| APR (from block 24621023) | 3.75% |
-| Idle factor | 80% (only idle vault deposits are rewarded, ~20% is allocated to markets) |
-| Share price | Average of start and end block prices |
+| APR | Configurable per period via `APR_SCHEDULE` in `constants.py` |
+| Eligible balance | Actual USDS sitting in the vault (tracked via USDS Transfer events) |
+| Share price | Average of start and end block prices (used for display only) |
 
 ## Usage
 
@@ -46,9 +44,9 @@ No dependencies required (Python 3.7+ standard library only).
 
 | File | Description |
 |------|-------------|
-| `rewards.json` | Airdrop file mapping depositor addresses to reward amounts (wei) |
-| `depositors_summary.csv` | Detailed breakdown per depositor (TWA, balances, counts) |
-| `extraction_data.json` | Intermediate data (pre-balances, events, share price) |
+| `rewards_<start>_to_<end>.json` | Airdrop file mapping depositor addresses to reward amounts (wei) |
+| `depositors_summary.csv` | Detailed breakdown per depositor (balances, counts) |
+| `extraction_data.json` | Intermediate data (pre-balances, share events, USDS vault events, share price) |
 | `events.csv` | Raw share transfer events used for computation |
 
 ### rewards.json format
@@ -68,5 +66,5 @@ No dependencies required (Python 3.7+ standard library only).
 
 See [PLAN.md](PLAN.md) for the full methodology, including:
 - Why shares are tracked instead of assets
-- How the 80% idle factor was verified on-chain
+- How vault USDS balance is tracked via Transfer events
 - How pre-period balances are handled

@@ -1,10 +1,11 @@
 """
-Extract share transfer events (deposits, withdrawals, transfers) from the
-Flagship vault and compute pre-period balances.
+Extract share transfer events and USDS vault balance data from the
+Flagship vault for SSR reward calculation.
 
 Outputs:
   - events.csv: all in-period share transfer events
-  - balances.json: pre-period balances + in-period events (intermediate data for calculate_rewards.py)
+  - extraction_data.json: pre-period balances, in-period events, USDS vault
+    balance data (intermediate data for calculate_rewards.py)
 
 Usage:
     python3 extract_events.py
@@ -23,17 +24,17 @@ from datetime import datetime, timezone
 from constants import (
     VAULT, TRANSFER_TOPIC, FROM_BLOCK, FROM_BLOCK_TS,
     TO_BLOCK, TO_BLOCK_TS,
-    USDS_DECIMALS, ZERO_ADDR_PADDED, DEAD_ADDRESS, ETHERSCAN_API,
+    USDS_TOKEN, ZERO_ADDR_PADDED, DEAD_ADDRESS, ETHERSCAN_API,
 )
 
 ETHERSCAN_API_KEY = os.environ.get("ETHERSCAN_API_KEY", "")
 RPC_URL = os.environ.get("RPC_URL", "")
 
 
-def etherscan_get_logs(topic0, from_block, to_block, page=1, offset=1000):
+def etherscan_get_logs(address, topic0, from_block, to_block, topic1=None, topic2=None, page=1, offset=1000):
     params = (
         f"?chainid=1&module=logs&action=getLogs"
-        f"&address={VAULT}"
+        f"&address={address}"
         f"&topic0={topic0}"
         f"&fromBlock={from_block}"
         f"&toBlock={to_block}"
@@ -41,6 +42,10 @@ def etherscan_get_logs(topic0, from_block, to_block, page=1, offset=1000):
         f"&offset={offset}"
         f"&apikey={ETHERSCAN_API_KEY}"
     )
+    if topic1:
+        params += f"&topic1={topic1}&topic0_1_opr=and"
+    if topic2:
+        params += f"&topic2={topic2}&topic0_2_opr=and"
     url = ETHERSCAN_API + params
     req = urllib.request.Request(url, headers={"Accept": "application/json"})
     try:
@@ -51,12 +56,12 @@ def etherscan_get_logs(topic0, from_block, to_block, page=1, offset=1000):
         raise RuntimeError(f"HTTP {e.code}: {body}")
 
 
-def fetch_all_logs(topic0, label, from_block=FROM_BLOCK):
+def fetch_all_logs(address, topic0, label, from_block=FROM_BLOCK, topic1=None, topic2=None):
     all_logs = []
     page = 1
     while True:
         print(f"  [{label}] Fetching page {page}...")
-        result = etherscan_get_logs(topic0, from_block, 99999999, page=page)
+        result = etherscan_get_logs(address, topic0, from_block, 99999999, topic1=topic1, topic2=topic2, page=page)
 
         if result.get("status") == "0":
             break
@@ -141,6 +146,61 @@ def parse_transfer_events(logs):
     return events
 
 
+def get_vault_usds_balance(block_hex):
+    """Get vault's USDS token balance at a given block via balanceOf RPC call."""
+    vault_padded = VAULT[2:].lower().zfill(64)
+    data = "0x70a08231" + vault_padded  # balanceOf(address)
+    result = rpc_call("eth_call", [{"to": USDS_TOKEN, "data": data}, block_hex])
+    return int(result, 16)
+
+
+def fetch_usds_vault_transfers(label, from_block):
+    """Fetch USDS Transfer events where vault is sender or receiver."""
+    vault_padded = "0x" + VAULT[2:].lower().zfill(64)
+
+    from_logs = fetch_all_logs(
+        USDS_TOKEN, TRANSFER_TOPIC, f"{label}-from-vault",
+        from_block=from_block, topic1=vault_padded,
+    )
+    time.sleep(0.25)
+    to_logs = fetch_all_logs(
+        USDS_TOKEN, TRANSFER_TOPIC, f"{label}-to-vault",
+        from_block=from_block, topic2=vault_padded,
+    )
+
+    return from_logs + to_logs
+
+
+def parse_usds_vault_events(logs):
+    """Parse USDS Transfer events into vault balance deltas."""
+    vault_padded = "0x" + VAULT[2:].lower().zfill(64)
+    events = []
+    for log in logs:
+        from_addr = log["topics"][1]
+        to_addr = log["topics"][2]
+        amount = int(log["data"], 16)
+        block_number = int(log["blockNumber"], 16)
+        log_index = int(log["logIndex"], 16)
+        timestamp = int(log["timeStamp"], 16)
+        tx_hash = log["transactionHash"]
+
+        if to_addr == vault_padded:
+            delta = amount
+        elif from_addr == vault_padded:
+            delta = -amount
+        else:
+            continue
+
+        events.append({
+            "delta_usds": delta,
+            "block_number": block_number,
+            "log_index": log_index,
+            "timestamp": timestamp,
+            "tx_hash": tx_hash,
+        })
+    return events
+
+
 def get_pre_period_balances(transfer_logs_pre):
     """Compute share balances at the start of the period from pre-period Transfer events."""
     balances = defaultdict(int)
@@ -199,7 +259,7 @@ def main():
 
     # Fetch pre-period Transfer events
     print("Fetching pre-period Transfer events...")
-    pre_transfer_logs = fetch_all_logs(TRANSFER_TOPIC, "Pre-Transfer", from_block=0)
+    pre_transfer_logs = fetch_all_logs(VAULT, TRANSFER_TOPIC, "Pre-Transfer", from_block=0)
     pre_transfer_logs = [l for l in pre_transfer_logs if int(l["blockNumber"], 16) < FROM_BLOCK]
     print(f"Pre-period Transfer events: {len(pre_transfer_logs)}")
     pre_balances = get_pre_period_balances(pre_transfer_logs)
@@ -211,7 +271,7 @@ def main():
 
     # Fetch in-period Transfer events
     print("Fetching in-period Transfer events...")
-    transfer_logs = fetch_all_logs(TRANSFER_TOPIC, "Transfer")
+    transfer_logs = fetch_all_logs(VAULT, TRANSFER_TOPIC, "Transfer")
     transfer_logs = [l for l in transfer_logs
                      if FROM_BLOCK <= int(l["blockNumber"], 16)
                      and int(l["timeStamp"], 16) <= TO_BLOCK_TS]
@@ -225,6 +285,24 @@ def main():
         type_counts[e["type"]] += 1
     print(f"  Deposits: {type_counts['deposit']}, Withdrawals: {type_counts['withdraw']}, "
           f"Transfers out: {type_counts['transfer_out']}, Transfers in: {type_counts['transfer_in']}")
+    print()
+
+    # Fetch vault's USDS balance and USDS transfer events
+    print("Fetching vault USDS balance at start and end blocks...")
+    vault_usds_start = get_vault_usds_balance(hex(FROM_BLOCK))
+    vault_usds_end = get_vault_usds_balance(hex(TO_BLOCK))
+    print(f"  Vault USDS at start: {vault_usds_start / 1e18:,.2f}")
+    print(f"  Vault USDS at end:   {vault_usds_end / 1e18:,.2f}")
+    print()
+
+    print("Fetching USDS Transfer events to/from vault...")
+    usds_logs = fetch_usds_vault_transfers("USDS-period", from_block=FROM_BLOCK)
+    usds_logs = [l for l in usds_logs
+                 if FROM_BLOCK <= int(l["blockNumber"], 16)
+                 and int(l["timeStamp"], 16) <= TO_BLOCK_TS]
+    usds_vault_events = parse_usds_vault_events(usds_logs)
+    usds_vault_events.sort(key=lambda e: (e["block_number"], e["log_index"]))
+    print(f"  In-period USDS vault events: {len(usds_vault_events)}")
     print()
 
     # Write events CSV
@@ -257,6 +335,17 @@ def main():
             "tx_hash": e["tx_hash"],
         })
 
+    serializable_usds_events = [
+        {
+            "delta_usds": str(e["delta_usds"]),
+            "block_number": e["block_number"],
+            "log_index": e["log_index"],
+            "timestamp": e["timestamp"],
+            "tx_hash": e["tx_hash"],
+        }
+        for e in usds_vault_events
+    ]
+
     extraction = {
         "vault": VAULT,
         "from_block": FROM_BLOCK,
@@ -265,8 +354,11 @@ def main():
         "to_block_ts": TO_BLOCK_TS,
         "extracted_at": int(time.time()),
         "avg_share_price": avg_price,
+        "initial_total_supply": str(start_ts),
+        "initial_vault_usds": str(vault_usds_start),
         "pre_balances": serializable_pre,
         "events": serializable_events,
+        "usds_vault_events": serializable_usds_events,
     }
     with open(data_path, "w") as f:
         json.dump(extraction, f)
